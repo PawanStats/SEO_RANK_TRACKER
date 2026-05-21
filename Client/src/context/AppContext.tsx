@@ -26,7 +26,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({children}: {children: React.ReactNode}) {
     const[ user, setUser] = useState<User | null>(null);
     const[ token, setToken] = useState<string | null>(localStorage.getItem("token"));
-    const[ loading, setLoading] = useState<boolean>(true);
+    const[ loading, setLoading] = useState<boolean>(!!localStorage.getItem("token"));
 
    // Axios instance with base URL and auth header
     const api = axios.create({
@@ -43,10 +43,6 @@ export function AppProvider({children}: {children: React.ReactNode}) {
     })
 
     const loadUser = async () => {
-        if(!token){
-            setLoading(false);
-            return;
-        }
         try {
             const {data} = await api.get("/api/auth/user");
             if(data.success){
@@ -57,11 +53,17 @@ export function AppProvider({children}: {children: React.ReactNode}) {
             setToken(null);
             setUser(null);
         }       
-         useEffect(() => {
-            loadUser();
-        }, [token]);
         setLoading(false);    
     }
+
+    useEffect(() => {
+        const token = localStorage.getItem("token");
+        if(token && !user) {
+            loadUser();
+        } else {
+            setLoading(false);
+        }
+    }, [user]);
 
     const login = async (email: string, password: string) => {
         try {
@@ -70,13 +72,16 @@ export function AppProvider({children}: {children: React.ReactNode}) {
                 setToken(res.data.token);
                 setUser(res.data.user);
                 localStorage.setItem("token", res.data.token);
+                setLoading(false);
                 return {success: true, message: res.data.message};
             }
+            setLoading(false);
             return {success: false, message: res.data.message};
         }catch (error: any) {
+            setLoading(false);
             return {success: false, message: error.response?.data?.message || "Login failed"};        
+        }
     }
-}
 
 
     const register = async (name: string, email: string, password: string) => {
@@ -86,10 +91,13 @@ export function AppProvider({children}: {children: React.ReactNode}) {
                 setToken(res.data.token);
                 setUser(res.data.user);
                 localStorage.setItem("token", res.data.token);
+                setLoading(false);
                 return {success: true, message: res.data.message};
             }
+            setLoading(false);
             return {success: false, message: res.data.message};
         }catch (error: any) {
+            setLoading(false);
             return {success: false, message: error.response?.data?.message || "Registration failed"};
         }
     }
