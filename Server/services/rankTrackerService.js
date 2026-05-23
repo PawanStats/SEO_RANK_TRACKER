@@ -1,10 +1,57 @@
-import chromium from 'playwright-core';
+import { chromium } from 'playwright-core';
 import browserbase from '@browserbasehq/sdk';
 
 // Initialize the Browserbase HQ SDK using the Cloud API Key
 const bb = new browserbase({
     apiKey: process.env.BROWSERBASE_API_KEY
 });
+
+// Queue system to prevent exceeding Browserbase concurrent session limit
+class TrackingQueue {
+    constructor() {
+        this.queue = [];
+        this.processing = false;
+        this.processedCount = 0;
+    }
+
+    async add(trackingFn) {
+        this.queue.push({ trackingFn });
+        console.log(`📋 Added to queue. Queue length: ${this.queue.length}`);
+        return new Promise((resolve, reject) => {
+            const handler = { trackingFn, resolve, reject };
+            this.queue[this.queue.length - 1] = handler;
+            this.process();
+        });
+    }
+
+    async process() {
+        if (this.processing || this.queue.length === 0) return;
+        
+        this.processing = true;
+        this.processedCount++;
+        const { trackingFn, resolve, reject } = this.queue.shift();
+        
+        console.log(`🚀 Processing request #${this.processedCount}. Remaining in queue: ${this.queue.length}`);
+
+        try {
+            const result = await trackingFn();
+            resolve(result);
+        } catch (error) {
+            console.error(`❌ Request #${this.processedCount} failed:`, error.message);
+            reject(error);
+        } finally {
+            this.processing = false;
+            // Add longer delay to ensure Browserbase releases the session properly
+            if (this.queue.length > 0) {
+                console.log(`   ⏳ Waiting 5 seconds before next tracking request...`);
+                await new Promise(r => setTimeout(r, 5000));
+            }
+            this.process();
+        }
+    }
+}
+
+const trackingQueue = new TrackingQueue();
 
 /**
  * Search Google for a keyword and extract the accurate ranking result for a target domain.
@@ -13,27 +60,51 @@ const bb = new browserbase({
  * @returns {Object} - An object detailing the crawl success state, position matrix, and competitor overview.
  */
 export async function rankTracker(keyword, targetDomain) {
+    return trackingQueue.add(() => rankTrackerInternal(keyword, targetDomain));
+}
+
+async function rankTrackerInternal(keyword, targetDomain) {
     let browser;
+    let session;
     const allResults = [];
     let found = null;
 
     try {
-        // 1. Initialize Cloud Browserbase Session & handle ad-blocking filters
-        const session = await bb.sessions.create({
-            browserSettings: {
-                blockAds: true
-            }
-        });
-
-        // Connect headless chromium instances seamlessly over CDP protocols
-        browser = await chromium.connectOverCDP(session.connectUrl);
+        console.log(`   🌐 Creating Browserbase session for: "${keyword}"`);
         
-        const defaultContext = browser.contexts()[0];
-        const page = defaultContext.pages()[0];
+        // 1. Initialize Cloud Browserbase Session & handle ad-blocking filters
+        session = await Promise.race([
+            bb.sessions.create({
+                browserSettings: {
+                    blockAds: true
+                }
+            }),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Session creation timeout after 30s')), 30000)
+            )
+        ]);
+
+        console.log(`   ✅ Session created: ${session.id}`);
+        console.log(`   📦 Session properties:`, Object.keys(session));
+
+        // Connect to Browserbase session correctly
+        const connectUrl = session.connectUrl || session.url || session.wsUrl;
+        if (!connectUrl) {
+            throw new Error(`Cannot find connection URL in session object. Available: ${Object.keys(session).join(', ')}`);
+        }
+        
+        console.log(`   🔗 Connecting to: ${connectUrl.substring(0, 50)}...`);
+        
+        browser = await chromium.connect(connectUrl);
+        
+        console.log(`   ✅ Connected to browser`);
+        
+        const context = await browser.createContext();
+        const page = await context.newPage();
         page.setDefaultNavigationTimeout(45000);
 
         // 2. Initial Google landing navigation & structural verification
-        await page.goto('https://www.google.com', { waitUtil: 'networkidle' });
+        await page.goto('https://www.google.com', { waitUntil: 'networkidle' });
 
         // Try-Catch intercept block to bypass localized cookie / consent prompts securely
         try {
@@ -138,14 +209,21 @@ export async function rankTracker(keyword, targetDomain) {
         }
 
         // 6. Graceful Session Termination & Competitor Mapping Matrix Synthesis
-        await browser.close();
+        if (browser) {
+            try {
+                await browser.close();
+                console.log(`   🔌 Browser closed successfully`);
+            } catch (closeError) {
+                console.error(`   ⚠️  Error closing browser:`, closeError.message);
+            }
+        }
 
         // Isolate domain instances to extract and format direct competitive ranking data cleanly
         const competitors = allResults
             .filter(r => !r.domain.toLowerCase().includes(cleanTarget) && !cleanTarget.includes(r.domain.toLowerCase()))
             .slice(0, 10);
 
-        return {
+        const responseData = {
             success: true,
             data: {
                 keyword,
@@ -159,14 +237,25 @@ export async function rankTracker(keyword, targetDomain) {
             }
         };
 
+        return responseData;
+
     } catch (error) {
-        console.error("Rank Check Core Automation Pipeline Exception:", error.message);
-        if (browser) {
-            await browser.close().catch(() => {});
-        }
+        console.error("❌ Rank Check Core Automation Pipeline Exception:", error.message);
+        console.error("   Stack:", error.stack?.split('\n')[0]);
+        
         return {
             success: false,
             error: error.message
         };
+    } finally {
+        // ALWAYS cleanup browser properly
+        if (browser) {
+            try {
+                await browser.close();
+                console.log(`   ✅ Browser closed`);
+            } catch (closeError) {
+                console.error(`   ⚠️  Error closing browser:`, closeError.message);
+            }
+        }
     }
 }

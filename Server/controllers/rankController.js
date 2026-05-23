@@ -20,15 +20,24 @@ export const addKeyword = async (req, res) => {
         const tracking = new KeywordTracking({
             userId: req.user._id,
             keyword: keyword.toLowerCase().trim(),
-            URL: url.startsWith('http') ? url : `http://${url}`,
+            url: url.startsWith('http') ? url : `http://${url}`,
             domain,
             status: 'checking',
         });
         await tracking.save();
-        res.status(201).json({ message: "Keyword tracking added successfully" });
-        keywordTracking(tracking);
+        res.status(201).json({ 
+            success: true,
+            message: "Keyword tracking added successfully",
+            tracking: tracking
+        });
+        runTrackingService(tracking);
     } catch (error) {
-        res.status(500).json({ message: "Internal server error" });
+        console.error("Add Keyword Error:", error.message);
+        console.error("Error Details:", error);
+        res.status(500).json({ 
+            success: false,
+            message: error.message || "Internal server error" 
+        });
     }
 }
 

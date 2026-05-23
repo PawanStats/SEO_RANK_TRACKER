@@ -3,9 +3,9 @@ import { useApp } from '../context/AppContext';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { 
-  Plus, RefreshCw, Trash2, ToggleLeft, ToggleRight, 
-  ArrowUpRight, ArrowDownRight, Minus, Search, Globe, 
-  ChevronRight, AlertCircle, Loader2 
+  Plus, RefreshCw, Trash2, Search, Globe, 
+  AlertCircle, Loader2, Filter, ArrowUpDown, Clock, 
+  ExternalLink, Eye, EyeOff, X, Target, ArrowUpRight, ArrowDownRight
 } from 'lucide-react';
 
 interface Competitor {
@@ -46,6 +46,56 @@ export default function RankTracker() {
   // Operational loading states tracking item IDs
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Search and filter states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<string>('newest');
+
+  // Helper function to get position badge styling
+  const getPositionBadge = (position: number | null) => {
+    if (!position) return { class: 'bg-muted text-muted-foreground' };
+    if (position === 1) return { class: 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400' };
+    if (position <= 3) return { class: 'bg-blue-500/20 text-blue-700 dark:text-blue-400' };
+    if (position <= 10) return { class: 'bg-green-500/20 text-green-700 dark:text-green-400' };
+    return { class: 'bg-orange-500/20 text-orange-700 dark:text-orange-400' };
+  };
+
+  // Helper function to get position change indicator
+  const getChangeIndicator = (change: number) => {
+    if (change > 0) {
+      return { icon: <ArrowUpRight size={14} />, text: `+${change}`, class: 'text-green-600 dark:text-green-400' };
+    } else if (change < 0) {
+      return { icon: <ArrowDownRight size={14} />, text: `${change}`, class: 'text-red-600 dark:text-red-400' };
+    }
+    return { icon: null, text: 'No change', class: 'text-muted-foreground' };
+  };
+
+  // Compute processed data based on filters and sort
+  const processedData = keywords
+    .filter((kw) => {
+      const matchesSearch = 
+        kw.keyword.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        kw.domain.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesStatus = 
+        statusFilter === 'all' || 
+        (statusFilter === 'active' && kw.active) ||
+        (statusFilter === 'paused' && !kw.active);
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case 'rank_asc':
+          return (a.currentPosition || 999) - (b.currentPosition || 999);
+        case 'rank_desc':
+          return (b.currentPosition || 999) - (a.currentPosition || 999);
+        case 'change':
+          return b.positionChange - a.positionChange;
+        case 'newest':
+        default:
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+    });
 
   // Fetch all keywords on load
   const fetchKeywords = async () => {
@@ -88,11 +138,15 @@ export default function RankTracker() {
         setNewKeyword('');
         setNewURL('');
         setIsModalOpen(false);
-        toast.success('Keyword tracking initialized!');
+        toast.success('Keyword tracking initialized! This may take up to 2-3 minutes...');
 
         // Poll server for completion status
         const id = tempTracking._id;
+        let pollCount = 0;
+        const maxPolls = 120; // 10 minutes max (120 * 5 seconds)
+        
         const pollInterval = setInterval(async () => {
+          pollCount++;
           try {
             const check = await api.get(`/api/rank/${id}`);
             if (check.data.tracking.status !== 'checking') {
@@ -101,13 +155,28 @@ export default function RankTracker() {
               setKeywords((prev) =>
                 prev.map((k) => (k._id === id ? check.data.tracking : k))
               );
-              toast.success(`Tracking complete for "${check.data.tracking.keyword}"!`);
+              if (check.data.tracking.status === 'completed') {
+                toast.success(`✅ Tracking complete! Position: #${check.data.tracking.currentPosition || 'N/A'}`);
+              } else if (check.data.tracking.status === 'failed') {
+                toast.error('❌ Tracking failed. Please try again.');
+              }
+            } else if (pollCount % 12 === 0) {
+              // Show progress every 60 seconds
+              toast.loading(`Still tracking... (${pollCount * 5} seconds elapsed)`);
+            }
+            
+            // Stop polling after max attempts
+            if (pollCount >= maxPolls) {
+              clearInterval(pollInterval);
+              toast.error('Tracking took too long. Please refresh to check status.');
             }
           } catch (err: any) {
-            console.error(err);
-            clearInterval(pollInterval);
+            console.error('Polling error:', err);
+            if (pollCount >= maxPolls) {
+              clearInterval(pollInterval);
+            }
           }
-        }, 3000);
+        }, 5000); // Poll every 5 seconds instead of 3
       }
     } catch (err: any) {
       setAddError(err.response?.data?.message || 'Failed to add keyword');
@@ -156,14 +225,14 @@ export default function RankTracker() {
   // Handle active/inactive chron configuration toggle
   const handleToggle = async (id: string) => {
     try {
-      const response = await api.put(`/api/rank/${id}/toggle`);
-      if (response.data.success) {
+      const res = await api.put(`/api/rank/${id}/toggle`);
+      if (res.data.success) {
         setKeywords((prev) =>
           prev.map((k) =>
-            k._id === id ? { ...k, active: response.data.tracking.active } : k
+            k._id === id ? { ...k, active: res.data.tracking.active } : k
           )
         );
-        toast.success(response.data.tracking.active ? 'Daily auto-tracking active' : 'Daily auto-tracking paused');
+        toast.success(res.data.tracking.active ? 'Daily auto-tracking active' : 'Daily auto-tracking paused');
       }
     } catch (error) {
       console.error('Toggle failed', error);
@@ -176,8 +245,8 @@ export default function RankTracker() {
     if (!window.confirm('Are you sure you want to stop tracking this keyword?')) return;
     setDeletingId(id);
     try {
-      const response = await api.delete(`/api/rank/${id}`);
-      if (response.data.success) {
+      const res = await api.delete(`/api/rank/${id}`);
+      if (res.data.success) {
         setKeywords((prev) => prev.filter((k) => k._id !== id));
         toast.success('Keyword tracker removed.');
       }
@@ -190,222 +259,243 @@ export default function RankTracker() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* Top Header Section */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-200 dark:border-gray-800 pb-5">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">AI Rank Tracker</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">Monitor keyword listings on search engines and competitor dynamics.</p>
-        </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
-        >
-          <Plus size={20} />
-          Track New Keyword
-        </button>
-      </div>
-
-      {/* Main Grid View */}
-      {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="animate-spin text-indigo-600" size={40} />
-        </div>
-      ) : keywords.length === 0 ? (
-        <div className="text-center py-16 bg-gray-50 dark:bg-gray-900/50 rounded-2xl border border-dashed border-gray-300 dark:border-gray-800">
-          <Search className="mx-auto text-gray-400 mb-4" size={48} />
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">No keywords monitored</h3>
-          <p className="text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">Start adding optimization keywords matching target web configurations to generate organic indexes.</p>
-        </div>
-      ) : (
-        <div className="overflow-x-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-sm">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-gray-50 dark:bg-gray-800/50 text-gray-500 dark:text-gray-400 text-xs font-semibold uppercase tracking-wider border-b border-gray-200 dark:border-gray-800">
-                <th className="px-6 py-4">Keyword Details</th>
-                <th className="px-6 py-4">Target Destination</th>
-                <th className="px-6 py-4 text-center">Google Position</th>
-                <th className="px-6 py-4 text-center">Variance</th>
-                <th className="px-6 py-4 text-center">Best Rank</th>
-                <th className="px-6 py-4 text-center">Automation</th>
-                <th className="px-6 py-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-800 text-sm">
-              {keywords.map((k) => (
-                <tr key={k._id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition">
-                  {/* Keyword info */}
-                  <td className="px-6 py-4 font-medium text-gray-900 dark:text-white capitalize">
-                    <div className="flex flex-col">
-                      <span>{k.keyword}</span>
-                      <span className="text-xs text-gray-400 font-normal mt-0.5">Added {new Date(k.createdAt).toLocaleDateString()}</span>
+        <div className="min-h-scree pt-16 md:pt-24 bg-background">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                    <div>
+                        <h1 className="text-2xl sm:text-3xl font-medium text-foreground">
+                            <span className="gradient-text">Rank Tracker</span>
+                        </h1>
+                        <p className="text-muted-foreground text-sm mt-1">Track your keyword rankings on Google — updated daily.</p>
                     </div>
-                  </td>
-                  
-                  {/* Destination Domain */}
-                  <td className="px-6 py-4 text-gray-500 dark:text-gray-400 font-mono text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <Globe size={14} className="text-gray-400" />
-                      <span>{k.domain}</span>
-                    </div>
-                  </td>
-
-                  {/* Position */}
-                  <td className="px-6 py-4 text-center font-semibold">
-                    {k.status === 'checking' ? (
-                      <div className="flex items-center justify-center gap-1 text-amber-500">
-                        <Loader2 className="animate-spin" size={14} />
-                        <span className="text-xs font-medium">Checking</span>
-                      </div>
-                    ) : k.currentPosition ? (
-                      <span className="text-base text-gray-900 dark:text-white">{k.currentPosition}</span>
-                    ) : (
-                      <span className="text-gray-400 dark:text-gray-600 font-normal text-xs">Not Ranked</span>
-                    )}
-                  </td>
-
-                  {/* Position Change / Variance */}
-                  <td className="px-6 py-4">
-                    <div className="flex items-center justify-center gap-1">
-                      {k.positionChange > 0 ? (
-                        <span className="flex items-center gap-0.5 text-xs font-medium text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
-                          <ArrowUpRight size={14} /> {k.positionChange}
-                        </span>
-                      ) : k.positionChange < 0 ? (
-                        <span className="flex items-center gap-0.5 text-xs font-medium text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full">
-                          <ArrowDownRight size={14} /> {Math.abs(k.positionChange)}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400"><Minus size={14} /></span>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Best Position */}
-                  <td className="px-6 py-4 text-center font-medium text-gray-500 dark:text-gray-400">
-                    {k.bestPosition || '--'}
-                  </td>
-
-                  {/* Active Toggle Status */}
-                  <td className="px-6 py-4">
-                    <div className="flex items-center justify-center">
-                      <button 
-                        onClick={() => handleToggle(k._id)}
-                        className="text-gray-400 hover:text-indigo-600 transition"
-                      >
-                        {k.active ? (
-                          <ToggleRight size={28} className="text-indigo-600" />
-                        ) : (
-                          <ToggleLeft size={28} />
-                        )}
-                      </button>
-                    </div>
-                  </td>
-
-                  {/* Custom Route and Utility Actions */}
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <button
-                        onClick={() => handleRefresh(k._id)}
-                        disabled={refreshingId === k._id || k.status === 'checking'}
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition disabled:opacity-40"
-                        title="Recrawl Status"
-                      >
-                        <RefreshCw size={16} className={refreshingId === k._id ? 'animate-spin' : ''} />
-                      </button>
-
-                      <button
-                        onClick={() => handleDelete(k._id)}
-                        disabled={deletingId === k._id}
-                        className="text-gray-400 hover:text-red-500 transition disabled:opacity-40"
-                        title="Delete Tracker"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-
-                      <Link
-                        to={`/rank/${k._id}`}
-                        className="flex items-center gap-0.5 text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-medium transition"
-                      >
-                        View History
-                        <ChevronRight size={14} />
-                      </Link>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Add Keyword Overlay Modal Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-xl p-6 relative">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Add Keyword</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Initialize tracking indexing targets using autonomous rendering clusters.</p>
-            
-            <form onSubmit={handleAdd} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
-                  Target Keyword
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g., full stack project deployment"
-                  value={newKeyword}
-                  onChange={(e) => setNewKeyword(e.target.value)}
-                  className="w-full bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1.5">
-                  Website URL
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g., greatstack.dev"
-                  value={newURL}
-                  onChange={(e) => setNewURL(e.target.value)}
-                  className="w-full bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
-                  required
-                />
-              </div>
-
-              {addError && (
-                <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-900/20 px-3 py-2.5 rounded-lg border border-red-200 dark:border-red-900/30">
-                  <AlertCircle size={14} className="shrink-0" />
-                  <span>{addError}</span>
+                    <button onClick={() => setIsModalOpen(true)} className="bg-primary px-5 py-2.5 rounded-xl text-sm font-semibold text-primary-foreground hover:opacity-90 transition-opacity flex items-center gap-2 self-start" id="add-keyword-btn" style={{ color: "var(--background)" }}>
+                        <Plus size={18} />
+                        Track Keyword
+                    </button>
                 </div>
-              )}
 
-              <div className="flex justify-end gap-3 mt-6 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    setAddError('');
-                  }}
-                  className="px-4 py-2 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium rounded-lg text-sm transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isAdding}
-                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition disabled:opacity-50"
-                >
-                  {isAdding && <Loader2 size={16} className="animate-spin" />}
-                  {isAdding ? 'Initializing...' : 'Start Tracking'}
-                </button>
-              </div>
-            </form>
-          </div>
+                {/* Filters Row */}
+                <div className="mb-6 flex flex-col md:flex-row gap-3" style={{ animationDelay: "100ms" }}>
+                    <div className="glass rounded-xl px-4 py-2.5 flex items-center gap-2 flex-1">
+                        <Search size={18} className="text-muted-foreground" />
+                        <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search keywords or domains..." className="bg-transparent text-sm text-foreground placeholder-muted-foreground outline-none flex-1" id="rank-search-input" />
+                    </div>
+
+                    <div className="flex gap-3">
+                        <div className="glass rounded-xl px-4 py-2.5 flex items-center gap-2">
+                            <Filter size={16} className="text-muted-foreground" />
+                            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="bg-transparent text-sm text-foreground outline-none appearance-none pr-4 cursor-pointer">
+                                <option value="all" className="bg-background">
+                                    All Status
+                                </option>
+                                <option value="active" className="bg-background">
+                                    Active
+                                </option>
+                                <option value="paused" className="bg-background">
+                                    Paused
+                                </option>
+                            </select>
+                        </div>
+                        <div className="glass rounded-xl px-4 py-2.5 flex items-center gap-2">
+                            <ArrowUpDown size={16} className="text-muted-foreground" />
+                            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-transparent text-sm text-foreground outline-none appearance-none pr-4 cursor-pointer">
+                                <option value="newest" className="bg-background">
+                                    Newest First
+                                </option>
+                                <option value="rank_asc" className="bg-background">
+                                    Highest Ranked
+                                </option>
+                                <option value="rank_desc" className="bg-background">
+                                    Lowest Ranked
+                                </option>
+                                <option value="change" className="bg-background">
+                                    Biggest Gain
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Keywords List */}
+                {loading ? (
+                    <div className="flex items-center justify-center py-30">
+                        <div className="size-7 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    </div>
+                ) : processedData.length === 0 ? (
+                    <div className="glass rounded-2xl p-12 text-center">
+                        <Target size={48} className="mx-auto text-muted-foreground mb-4 opacity-50" />
+                        <h3 className="text-lg font-semibold text-foreground mb-2">No keywords tracked yet</h3>
+                        <p className="text-sm text-muted-foreground mb-6">Add your first keyword and URL to start tracking your Google rankings.</p>
+                        <button onClick={() => setIsModalOpen(true)} className="bg-primary px-5 py-2.5 rounded-xl text-sm font-semibold text-primary-foreground hover:opacity-90 transition-opacity" style={{ color: "var(--background)" }}>
+                            Track Your First Keyword
+                        </button>
+                    </div>
+                ) : (
+                    <div className="space-y-3" style={{ animationDelay: "200ms" }}>
+                        {processedData.map((kw) => {
+                            const posBadge = getPositionBadge(kw.currentPosition);
+                            const change = getChangeIndicator(kw.positionChange);
+
+                            return (
+                                <div key={kw._id} className={`glass rounded-xl p-5 hover:bg-muted/50 transition-all ${!kw.active ? "opacity-50" : ""}`}>
+                                    <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                                        {/* Rank badge */}
+                                        <div className="flex items-center gap-4 lg:w-32 shrink-0">
+                                            {kw.status === "checking" ? (
+                                                <div className="w-16 h-16 rounded-xl glass flex items-center justify-center">
+                                                    <Loader2 size={24} className="text-primary animate-spin" />
+                                                </div>
+                                            ) : (
+                                                <div className={`w-16 h-16 rounded-xl flex items-center justify-center text-lg font-bold ${posBadge.class}`}>{kw.currentPosition ? `#${kw.currentPosition}` : "—"}</div>
+                                            )}
+                                            {kw.status === "completed" && kw.currentPosition && (
+                                                <div className="text-center mt-1">
+                                                    <div className={`flex items-center justify-center gap-1 text-sm font-medium ${change.class}`}>
+                                                        {change.icon}
+                                                        {change.text}
+                                                    </div>
+                                                    <p className="text-[10px] text-muted-foreground mt-0.5">change</p>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex-1 min-w-0">
+                                            <Link to={`/rank/${kw._id}`} className="text-base font-semibold text-foreground hover:text-primary transition-colors block truncate">
+                                                "{kw.keyword}"
+                                            </Link>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <Globe size={12} className="text-muted-foreground" />
+                                                <span className="text-sm text-muted-foreground truncate">{kw.domain}</span>
+                                                {kw.currentPage && <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">Page {kw.currentPage}</span>}
+                                            </div>
+                                            {kw.lastChecked && (
+                                                <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                                                    <Clock size={10} />
+                                                    Last checked: {new Date(kw.lastChecked).toLocaleString()}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Stats */}
+                                        {kw.status === "completed" && (
+                                            <div className="hidden md:flex items-center gap-5">
+                                                <div className="text-center">
+                                                    <p className="text-sm font-bold text-primary">{kw.bestPosition || "—"}</p>
+                                                    <p className="text-[10px] text-muted-foreground">Best</p>
+                                                </div>
+                                                <div className="text-center">
+                                                    <p className="text-sm font-bold text-accent">{kw.competitors?.length || 0}</p>
+                                                    <p className="text-[10px] text-muted-foreground">Competitors</p>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Actions */}
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <Link to={`/rank/${kw._id}`} className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-primary transition-all" title="View Details">
+                                                <ExternalLink size={16} />
+                                            </Link>
+                                            <button onClick={() => handleRefresh(kw._id)} disabled={refreshingId === kw._id || kw.status === "checking"} className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-primary transition-all disabled:opacity-30" title="Refresh Ranking">
+                                                <RefreshCw size={16} className={refreshingId === kw._id ? "animate-spin" : ""} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleToggle(kw._id)}
+                                                className={`p-2 rounded-lg hover:bg-muted transition-all ${kw.active ? "text-success hover:text-success" : "text-muted-foreground hover:text-foreground"}`}
+                                                title={kw.active ? "Pause Tracking" : "Resume Tracking"}
+                                            >
+                                                {kw.active ? <Eye size={16} /> : <EyeOff size={16} />}
+                                            </button>
+                                            <button onClick={() => handleDelete(kw._id)} disabled={deletingId === kw._id} className="p-2 rounded-lg hover:bg-danger/10 text-muted-foreground hover:text-danger transition-all disabled:opacity-50" title="Delete">
+                                                {deletingId === kw._id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* Add Modal */}
+            {isModalOpen && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-background border border-border rounded-2xl p-6 w-full max-w-md">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-lg font-bold text-foreground">Track New Keyword</h2>
+                            <button
+                                onClick={() => {
+                                    setIsModalOpen(false);
+                                    setAddError("");
+                                }}
+                                className="text-muted-foreground hover:text-foreground"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {addError && (
+                            <div className="mb-4 px-4 py-3 rounded-xl severity-critical text-sm flex items-center gap-2">
+                                <AlertCircle size={16} className="shrink-0" />
+                                {addError}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleAdd} className="space-y-4">
+                            <div>
+                                <label htmlFor="modal-keyword" className="block text-sm font-medium text-foreground mb-1.5">
+                                    Keyword
+                                </label>
+                                <div className="relative">
+                                    <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                                    <input
+                                        id="modal-keyword"
+                                        type="text"
+                                        value={newKeyword}
+                                        onChange={(e) => setNewKeyword(e.target.value)}
+                                        placeholder='e.g., "best seo tools"'
+                                        required
+                                        className="w-full pl-11 pr-4 py-3 rounded-xl bg-muted border border-border text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 transition-colors text-sm"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label htmlFor="modal-url" className="block text-sm font-medium text-foreground mb-1.5">
+                                    Website URL
+                                </label>
+                                <div className="relative">
+                                    <Globe size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                                    <input
+                                        id="modal-url"
+                                        type="text"
+                                        value={newURL}
+                                        onChange={(e) => setNewURL(e.target.value)}
+                                        placeholder="e.g., example.com"
+                                        required
+                                        className="w-full pl-11 pr-4 py-3 rounded-xl bg-muted border border-border text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 transition-colors text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 text-xs text-muted-foreground">
+                                <p>💡 We'll search Google for your keyword, find your website's position (up to page 5), and track it daily.</p>
+                            </div>
+
+                            <button type="submit" disabled={isAdding} className="w-full py-3 rounded-xl bg-primary font-semibold text-sm text-primary-foreground flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50" style={{ color: "var(--background)" }}>
+                                {isAdding ? (
+                                    <Loader2 size={18} className="animate-spin" />
+                                ) : (
+                                    <>
+                                        <Target size={18} />
+                                        Start Tracking
+                                    </>
+                                )}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
-      )}
-    </div>
-  );
+    );
 }
