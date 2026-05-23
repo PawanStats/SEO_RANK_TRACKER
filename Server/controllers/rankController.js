@@ -1,7 +1,7 @@
 import KeywordTracking from '../models/keywordTracking.js';
 import { keywordTracking as runTrackingService } from '../services/keywordTrackingService.js';
 
-export const addkeyword = async (req, res) => {
+export const addKeyword = async (req, res) => {
     try{
         const { keyword, url } = req.body;
 
@@ -33,11 +33,30 @@ export const addkeyword = async (req, res) => {
 }
 
 
+export const getKeywords = async (req, res) => {
+    try {
+        const keywords = await KeywordTracking.find({
+            userId: req.user._id
+        });
+
+        return res.status(200).json({
+            success: true,
+            keywords
+        });
+    } catch (error) {
+        console.error("Get Keywords Error:", error.message);
+        return res.status(500).json({ 
+            success: false, 
+            message: "Server Error" 
+        });
+    }
+};
+
 export const getKeyword = async (req, res) => {
     try {
         const tracking = await KeywordTracking.findOne({
             _id: req.params.id,
-            userId: req.userId
+            userId: req.user._id
         });
 
         if (!tracking) {
@@ -69,7 +88,7 @@ export const refreshKeyword = async (req, res) => {
     try {
         const tracking = await KeywordTracking.findOne({
             _id: req.params.id,
-            userId: req.userId
+            userId: req.user._id
         });
 
         if (!tracking) {
@@ -109,7 +128,7 @@ export const deleteKeyword = async (req, res) => {
     try {
         const tracking = await KeywordTracking.findOneAndDelete({
             _id: req.params.id,
-            userId: req.userId
+            userId: req.user._id
         });
 
         if (!tracking) {
@@ -141,7 +160,7 @@ export const toggleTracking = async (req, res) => {
     try {
         const tracking = await KeywordTracking.findOne({
             _id: req.params.id,
-            userId: req.userId
+            userId: req.user._id
         });
 
         if (!tracking) {

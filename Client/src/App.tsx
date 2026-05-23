@@ -10,7 +10,7 @@ import History from "./pages/History";
 import RankTracker from "./pages/RankTracker";
 import RankDetail from "./pages/RankDetail";
 import { Toaster } from "react-hot-toast";
-import { useApp } from "./context/Appcontext";
+import { useApp } from "./context/AppContext";
 
 export default function App() {
     const{user,loading} = useApp();
