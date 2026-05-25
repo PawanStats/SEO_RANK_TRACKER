@@ -67,7 +67,7 @@ export async function rankTracker(keyword, targetDomain) {
         browser = await chromium.connectOverCDP(sesssion.connectUrl());
         const page = browser.contexts()[0].pages()[0];
         page.setDefaultNavigationTimeout(45000);
-    }
+
         // 2. Initial Google landing navigation & structural verification
         await page.goto('https://www.google.com', { waitUntil: 'networkidle' });
 
