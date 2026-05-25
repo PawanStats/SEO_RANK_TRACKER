@@ -22,7 +22,7 @@ const keywordTrackingSchema = new mongoose.Schema({
     currentPosition: { type: Number, default: null },
     currentPage: { type: Number, default: null },
     bestPosition: { type: Number, default: null },
-    postionChange: { type: Number, default: null },
+    positionChange: { type: Number, default: null },
     rankHistory: [],
     competitors: [],
     active: { type: Boolean, default: true },

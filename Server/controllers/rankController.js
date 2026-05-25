@@ -20,7 +20,7 @@ export const addKeyword = async (req, res) => {
         const tracking = new KeywordTracking({
             userId: req.user._id,
             keyword: keyword.toLowerCase().trim(),
-            url: url.startsWith('http') ? url : `http://${url}`,
+            URL: url.startsWith('http') ? url : `http://${url}`,
             domain,
             status: 'checking',
         });
