@@ -416,24 +416,6 @@ PORT=5000
 VITE_API_URL=http://localhost:5000
 ```
 
-## 🐛 Troubleshooting
-
-### Rank Position Not Showing
-- **Solution**: System is in mock mode (Browserbase API upgrade pending). Ranks will show randomly generated positions for demo purposes.
-- Check server logs for mock data confirmation
-
-### MongoDB Connection Error
-- Verify `MONGODB_URI` in `.env`
-- Check MongoDB Atlas firewall settings
-- Ensure IP whitelist includes your machine
-
-### JWT Token Errors
-- Verify `JWT_SECRET` is set in `.env`
-- Check token is being sent in `Authorization: Bearer {token}` header
-
-### CORS Issues
-- Ensure `http://localhost:5173` is allowed in CORS configuration
-- Check both frontend and backend have correct URLs
 
 ## 🔮 Upcoming Features
 
@@ -460,12 +442,6 @@ Contributions are welcome! Please follow these steps:
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 👨‍💻 Author
-
-**GreatStack**
-- GitHub: [@greatstack](https://github.com)
-- Email: greatstack@example.com
-
 ## 🙏 Acknowledgments
 
 - Browserbase for cloud browser sessions
@@ -473,12 +449,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Gemini AI for advanced features
 - All contributors and testers
 
-## 📞 Support
-
-For support, email support@example.com or open an issue on GitHub.
-
----
-
-**Made with ❤️ by GreatStack**
 
 *Last Updated: May 26, 2026*
