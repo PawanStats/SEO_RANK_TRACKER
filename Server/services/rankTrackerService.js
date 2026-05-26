@@ -53,174 +53,73 @@ class TrackingQueue {
 
 const trackingQueue = new TrackingQueue();
 
-/**
- * Search Google for a keyword and extract the accurate ranking result for a target domain.
- * @param {string} keyword - The targeted SEO search phrase.
- * @param {string} targetDomain - The target domain name to check ranking for.
- * @returns {Object} - An object detailing the crawl success state, position matrix, and competitor overview.
- */
 export async function rankTracker(keyword, targetDomain) {
     let browser;
+    let allResults = [];
+    let found = null;
+    
+    console.log(`🔎 Starting rank tracking for keyword: "${keyword}" on domain: ${targetDomain}`);
+    console.log(`⚠️  [MOCK MODE] Browserbase API upgrade in progress - returning random data`);
+    
     try {
-        // 1. Initialize a new browser session using Browserbase HQ SDK with enhanced anti-detection parameters
-        const sesssion = await bb.sessions.create({ browserSettings: { blockAds: true } });
-        browser = await chromium.connectOverCDP(sesssion.connectUrl());
-        const page = browser.contexts()[0].pages()[0];
-        page.setDefaultNavigationTimeout(45000);
+        // Simulate processing delay
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // Generate mock results with random position
+        const mockPosition = Math.floor(Math.random() * 50) + 1; // Random position between 1-50
+        const mockPage = Math.ceil(mockPosition / 10); // Which Google page (1-5)
+        
+        // Generate mock competitors
+        const mockCompetitors = Array.from({ length: 10 }, (_, i) => ({
+            position: i + 1,
+            url: `https://example-competitor-${i + 1}.com`,
+            domain: `example-competitor-${i + 1}.com`,
+            title: `Competitor Result ${i + 1} for "${keyword}"`,
+            snippet: `This is a mock snippet showing competitor ranking for the keyword "${keyword}". Results are randomized until Browserbase API upgrade.`
+        }));
+        
+        found = {
+            position: mockPosition,
+            page: mockPage,
+            title: `Your Mock Result for "${keyword}"`,
+            snippet: `Mock ranking data: Your domain is currently ranked at position ${mockPosition} for "${keyword}". This is simulated data until the Browserbase API upgrade is complete.`,
+            url: `https://${targetDomain}`,
+            domain: targetDomain
+        };
 
-        // 2. Initial Google landing navigation & structural verification
-        await page.goto('https://www.google.com', { waitUntil: 'networkidle' });
+        const responseData = {
+            success: true,
+            data: {
+                keyword,
+                targetDomain,
+                position: found.position,
+                page: found.page,
+                title: found.title,
+                snippet: found.snippet,
+                competitors: mockCompetitors,
+                totalResultsScanned: 50
+            }
+        };
 
-    // Try-Catch intercept block to bypass localized cookie / consent prompts securely
-    try {
-        const btn = await page.$("button[id], form[action*='consent'] button");
-        if (btn) {
-            await btn.click();
-            await page.waitForTimeout(1500);
-        }
-    } catch (consentError) {
-        // No localized consent prompt intercepted; proceed safely to crawl phase.
-    }
+        console.log(`✅ Mock rank tracking completed for "${keyword}":`, responseData.data);
+        return responseData;
 
-    // Clean target string boundaries for optimized indexing operations
-    const cleanTarget = targetDomain.replace('www.', '').toLowerCase().trim();
+    } catch (error) {
+        console.error("❌ Mock Rank Tracking Error:", error.message);
 
-    // 3. Main Query Loop: Scan through up to 5 Google SERP compilation nodes (top 50 results)
-    for (let GPage = 0; GPage < 5; GPage++) {
-        if (found) break; // Break early if matching ranking positions are uncovered
-
-        const startIndex = GPage * 10;
-        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(keyword)}&start=${startIndex}&num=10&hl=en&gl=us`;
-
-        await page.goto(searchUrl, { waitUntil: 'networkidle' });
-
-        // 4. Dom Node Parsing & Structural Data Extraction Retry Mechanism
-        let pageResults = [];
-        for (let retry = 0; retry < 3; retry++) {
+        return {
+            success: false,
+            error: error.message
+        };
+    } finally {
+        // Cleanup if browser was used
+        if (browser) {
             try {
-                await page.waitForSelector('h3', { timeout: 8000 });
-                await page.waitForTimeout(1500);
-
-                // Deconstruct standard search list matrices dynamically from runtime viewport contextual boundaries
-                pageResults = await page.evaluate(() => {
-                    return Array.from(document.querySelectorAll('h3')).map(h3 => {
-                        let a = h3.closest('a');
-                        if (!a) {
-                            let p = h3.parentElement;
-                            for (let j = 0; j < 5; j++) {
-                                if (p && p.tagName === 'A') {
-                                    a = p;
-                                    break;
-                                }
-                                if (p) p = p.parentElement;
-                            }
-                        }
-
-                        if (!a || !a.href || !a.href.startsWith('http') || a.href.includes('google.com')) {
-                            return null;
-                        }
-
-                        // Dynamic parsing traversal tree to isolate the associated meta-description/snippet cleanly
-                        let snippet = '';
-                        let container = a.parentElement;
-                        for (let j = 0; j < 6; j++) {
-                            if (!container) break;
-                            const innerText = container.innerText || '';
-                            if (innerText.length > (h3.innerText || '').length + 50) {
-                                snippet = innerText
-                                    .split('\n')
-                                    .find(l => l.length > 30 && !l.includes(h3.innerText.substring(0, 20))) || '';
-                                break;
-                            }
-                            container = container.parentElement;
-                        }
-
-                        try {
-                            const parsedUrl = new URL(a.href);
-                            return {
-                                url: a.href,
-                                domain: parsedUrl.hostname.replace('www.', ''),
-                                title: h3.innerText.trim(),
-                                snippet: snippet.trim().substring(0, 300)
-                            };
-                        } catch {
-                            return null;
-                        }
-                    }).filter(Boolean);
-                });
-
-                if (pageResults.length > 0) break;
-            } catch (selectorError) {
-                if (retry === 2) break;
-                await page.reload({ waitUntil: 'networkidle' });
+                await browser.close();
+                console.log(`   ✅ Browser closed`);
+            } catch (closeError) {
+                console.error(`   ⚠️  Error closing browser:`, closeError.message);
             }
         }
-
-        if (pageResults.length === 0) break;
-
-        // 5. Compute Synthesized Positional Metrics & Cross-Match Against Target Boundary Identifiers
-        for (const r of pageResults) {
-            r.position = allResults.length + 1;
-            allResults.push(r);
-
-            const currentDomain = r.domain.toLowerCase();
-            if (!found && (currentDomain.includes(cleanTarget) || cleanTarget.includes(currentDomain))) {
-                found = { ...r, page: GPage + 1 };
-            }
-        }
-
-        // Anti-bot mitigation spacing algorithms
-        await page.waitForTimeout(2000 + Math.random() * 2000);
     }
-
-    // 6. Graceful Session Termination & Competitor Mapping Matrix Synthesis
-    if (browser) {
-        try {
-            await browser.close();
-            console.log(`   🔌 Browser closed successfully`);
-        } catch (closeError) {
-            console.error(`   ⚠️  Error closing browser:`, closeError.message);
-        }
-    }
-
-    // Isolate domain instances to extract and format direct competitive ranking data cleanly
-    const competitors = allResults
-        .filter(r => !r.domain.toLowerCase().includes(cleanTarget) && !cleanTarget.includes(r.domain.toLowerCase()))
-        .slice(0, 10);
-
-    const responseData = {
-        success: true,
-        data: {
-            keyword,
-            targetDomain,
-            position: found ? found.position : null,
-            page: found ? found.page : null,
-            title: found ? found.title : '',
-            snippet: found ? found.snippet : '',
-            competitors,
-            totalResultsScanned: allResults.length
-        }
-    };
-
-    return responseData;
-
-} catch (error) {
-    console.error("❌ Rank Check Core Automation Pipeline Exception:", error.message);
-    console.error("   Stack:", error.stack?.split('\n')[0]);
-
-    return {
-        success: false,
-        error: error.message
-    };
-} finally {
-    // ALWAYS cleanup browser properly
-    if (browser) {
-        try {
-            await browser.close();
-            console.log(`   ✅ Browser closed`);
-        } catch (closeError) {
-            console.error(`   ⚠️  Error closing browser:`, closeError.message);
-        }
-    }
-}
 }

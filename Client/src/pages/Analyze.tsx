@@ -35,12 +35,15 @@ export default function Analyze() {
        try{
         // step 0: initiate analysis
         setCurrentStep(0);
-        const res = await api.post("api/analysis/analyze", { url: targetUrl.startsWith("http") ? targetUrl : `https://${targetUrl}` });
+        const res = await api.post("/api/analysis/analyze", { url: targetUrl.startsWith("http") ? targetUrl : `https://${targetUrl}` });
+        
+        console.log("Analyze response:", res.data);
        
         if (!res.data.success) {
             throw new Error(res.data.message);
         }
         const id = res.data.analysisId;
+        console.log("Analysis ID:", id);
 
         // step 1: Scanning 
         setCurrentStep(1)
@@ -52,14 +55,14 @@ export default function Analyze() {
         pollRef.current = setInterval(async () => {
             attempts++;
             if (attempts > maxAttempts) {
-                if(pollRef.current) clearInterval(pollRef.current)
-                    setError("Analysis timed out. Please try again later.");
-                    setAnalyzing(false);
-                    return
+                if(pollRef.current) clearInterval(pollRef.current);
+                setError("Analysis timed out. Please try again later.");
+                setAnalyzing(false);
+                return;
             }
 
             try{
-                const check = await api.get(`api/analysis${id}`);
+                const check = await api.get(`/api/analysis/${id}`);
                 const analysis = check.data.analysis;
 
                 if (analysis.status === "completed") {
@@ -87,8 +90,6 @@ export default function Analyze() {
         setError(err.response?.data?.message || err.message || "failed to start analysis. Please try again.");
         setAnalyzing(false);
     }
-
-       }
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -99,7 +100,7 @@ export default function Analyze() {
     useEffect(() => {
         const prefillUrl = searchParams.get("url");
         if (prefillUrl) {
-            (() => setUrl(prefillUrl))();
+            setUrl(prefillUrl);
             // Auto-start if URL is provided
             setTimeout(() => handleAnalyze(prefillUrl), 500);
         }

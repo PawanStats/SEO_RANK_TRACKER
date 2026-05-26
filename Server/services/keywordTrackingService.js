@@ -9,17 +9,23 @@ export async function keywordTracking(tracking) {
     let result;
 
     try {
+        console.log(`🚀 Starting keyword tracking service for: "${tracking.keyword}"`);
+        
         // 1. Try up to 2 times for ultimate execution reliability against structural network blockades
         for (let attempt = 1; attempt <= 2; attempt++) {
+            console.log(`   📍 Attempt ${attempt}/2...`);
             result = await rankTracker(tracking.keyword, tracking.domain);
+            console.log(`   Result:`, result);
             
             // Break early if successful and valid public SERP data nodes have been extracted safely
             if (result.success && result.data.totalResultsScanned > 0) {
+                console.log(`   ✅ Attempt ${attempt} successful!`);
                 break;
             }
 
             // If the first attempt misses, implement variable exponential cooling delays before retrying
             if (attempt < 2) {
+                console.log(`   ⏳ Waiting before retry...`);
                 await new Promise((resolve) => 
                     setTimeout(resolve, result.success ? 3000 : 5000)
                 );
@@ -31,6 +37,12 @@ export async function keywordTracking(tracking) {
             const previousPosition = tracking.currentPosition;
             const today = new Date();
             today.setHours(0, 0, 0, 0); // Normalize time signatures to strictly keep tracking records daily
+
+            console.log(`📊 Result received for "${tracking.keyword}":`, {
+                position: result.data.position,
+                page: result.data.page,
+                totalScanned: result.data.totalResultsScanned
+            });
 
             // Bind newly extracted viewport positions back into database document states
             tracking.currentPosition = result.data.position;
@@ -79,6 +91,11 @@ export async function keywordTracking(tracking) {
 
         // 4. Persistence Phase - Commit changes safely back to database schemas
         await tracking.save();
+        console.log(`💾 Tracking saved successfully for "${tracking.keyword}":`, {
+            currentPosition: tracking.currentPosition,
+            currentPage: tracking.currentPage,
+            status: tracking.status
+        });
         return result;
 
     } catch (error) {

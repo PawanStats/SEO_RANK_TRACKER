@@ -12,6 +12,9 @@ const rankEntrySchema = new mongoose.Schema({
 const competitorSchema = new mongoose.Schema({
     position: { type: Number, required: true },
     url: { type: String, required: true, trim: true },
+    domain: { type: String, required: true },
+    title: { type: String, default: "" },
+    snippet: { type: String, default: "" },
 }, { _id: false })
 
 const keywordTrackingSchema = new mongoose.Schema({
@@ -23,8 +26,8 @@ const keywordTrackingSchema = new mongoose.Schema({
     currentPage: { type: Number, default: null },
     bestPosition: { type: Number, default: null },
     positionChange: { type: Number, default: null },
-    rankHistory: [],
-    competitors: [],
+    rankHistory: [rankEntrySchema],
+    competitors: [competitorSchema],
     active: { type: Boolean, default: true },
     lastChecked: { type: Date, default: null },
     status: { type: String, enum: ['pending', 'checking', "completed", "failed"], default: 'pending'},

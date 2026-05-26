@@ -1,8 +1,7 @@
-import mongoose from "mongoose0";
-import { useImperativeHandle } from "react";
+import mongoose from "mongoose";
 
 const issueSchema = new mongoose.Schema({
-    severity: { type: String, enum: ['low', 'medium', 'high'], required: true },
+    severity: { type: String, enum: ['critical', 'warning', 'info'], required: true },
     category: { type: String, required: true },
     message: { type: String, required: true },
     recommendation: { type: String, required: true },
@@ -12,7 +11,7 @@ const analysisSchema = new mongoose.Schema({
     url: { type: String, required: true },
      overallScore: { type: Number,min: 0, max: 100, default: null },
      categories:{
-        seo: { type: Number, deafult: 0 },
+        seo: { type: Number, default: 0 },
         performance: { type: Number, default: 0 },
         accessibility: { type: Number, default: 0 },
         bestPractices: { type: Number, default: 0 },    

@@ -38,14 +38,9 @@ export default function RankTracker() {
 
   const fetchKeywords = async () => {
     try {
-      const res = await api.get(`/api/rank/list}`);
+      const res = await api.get(`/api/rank/list`);
       if (res.data.success) {
-        if (res.data.tracking.status === "checking") {
-          setTimeout(fetchTracking, 3000)
-          setTracking(res.data.tracking)
-          return;
-        }
-        setTracking(res.data.tracking)
+        setKeywords(res.data.keywords);
       }
     } catch (err) {
       console.error("Failed to fetch keywords:", err);
@@ -117,13 +112,25 @@ export default function RankTracker() {
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this keyword tracking?")) return;
     setDeleting(id);
-    setTimeout(() => {
-      setDeleting(null);
-    }, 1000);
+    try {
+      await api.delete(`/api/rank/${id}`);
+      setKeywords((prev) => prev.filter((k) => k._id !== id));
+    } catch (error: any) {
+      console.error("Delete failed:", error);
+      alert("Failed to delete keyword");
+    }
+    setDeleting(null);
   };
 
   const handleToggle = async (id: string) => {
-    console.log(id);
+    try {
+      const res = await api.put(`/api/rank/${id}/toggle`);
+      if (res.data.success) {
+        setKeywords((prev) => prev.map((k) => (k._id === id ? res.data.tracking : k)));
+      }
+    } catch (error: any) {
+      console.error("Toggle failed:", error);
+    }
   };
 
   const getPositionBadge = (pos: number | null) => {
