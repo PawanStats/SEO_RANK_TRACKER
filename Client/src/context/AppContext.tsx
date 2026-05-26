@@ -20,8 +20,7 @@ interface AppContextType {
     logout: () => void;
 }
 
-const rawBackendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
-const BACKEND_URL = rawBackendUrl.endsWith('/') ? rawBackendUrl.slice(0, -1) : rawBackendUrl;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({children}: {children: React.ReactNode}) {

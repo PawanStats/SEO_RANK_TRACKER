@@ -9,13 +9,29 @@ import { startRankTrackingCron } from './cron/rankTrackingCron.js';
 connectDB();
 const app = express();
 
-// CORS Configuration - Allow only frontend URL
+// CORS Configuration - Allows Local, Production, and Preview Deployments
+const allowedOrigins = [
+    "http://localhost:5173",
+    "https://seo-rank-tracker-coral.vercel.app",
+    "https://seo-rank-tracker-git-main-pawanstats-projects.vercel.app"
+];
+
 const corsOptions = {
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith(".vercel.app")) {
+            return callback(null, true);
+        } else {
+            return callback(new Error("Not allowed by CORS"));
+        }
+    },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Added OPTIONS for safety
     allowedHeaders: ["Content-Type", "Authorization"]
 };
+
 app.use(cors(corsOptions));
 app.use(express.json());
 
